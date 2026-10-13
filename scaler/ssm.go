@@ -49,7 +49,8 @@ type lastScaleInParameterAPI interface {
 }
 
 // ssmLastScaleInStore keeps the last scale-in time in a String parameter in
-// SSM Parameter Store, formatted as RFC 3339.
+// SSM Parameter Store, formatted as RFC 3339. The parameter may instead be a
+// pre-created SecureString: Load decrypts it, and Save keeps its type.
 //
 // Parameter Store has no conditional write, but every PutParameter bumps the
 // parameter's version by exactly one and returns the new number. Save expects
@@ -66,7 +67,8 @@ type ssmLastScaleInStore struct {
 
 func (s *ssmLastScaleInStore) Load(ctx context.Context) (time.Time, error) {
 	output, err := s.client.GetParameter(ctx, &ssm.GetParameterInput{
-		Name: aws.String(s.name),
+		Name:           aws.String(s.name),
+		WithDecryption: aws.Bool(true),
 	})
 	var notFound *types.ParameterNotFound
 	if errors.As(err, &notFound) {
@@ -102,8 +104,9 @@ func (s *ssmLastScaleInStore) Save(ctx context.Context, t time.Time) error {
 	output, err := s.client.PutParameter(ctx, &ssm.PutParameterInput{
 		Name:      aws.String(s.name),
 		Value:     aws.String(t.UTC().Format(time.RFC3339)),
-		Type:      types.ParameterTypeString,
 		Overwrite: aws.Bool(true),
+		// Type is left unset so overwriting keeps the parameter's existing
+		// type, rather than downgrading a SecureString to a String.
 	})
 	if err != nil {
 		return fmt.Errorf("put parameter %s: %w", s.name, err)

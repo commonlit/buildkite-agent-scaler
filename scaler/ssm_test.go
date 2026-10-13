@@ -12,6 +12,7 @@ import (
 )
 
 type fakeLastScaleInParameterAPI struct {
+	getInput   *ssm.GetParameterInput
 	getOutput  *ssm.GetParameterOutput
 	getErr     error
 	putInput   *ssm.PutParameterInput
@@ -19,7 +20,8 @@ type fakeLastScaleInParameterAPI struct {
 	putErr     error
 }
 
-func (f *fakeLastScaleInParameterAPI) GetParameter(context.Context, *ssm.GetParameterInput, ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+func (f *fakeLastScaleInParameterAPI) GetParameter(_ context.Context, in *ssm.GetParameterInput, _ ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	f.getInput = in
 	return f.getOutput, f.getErr
 }
 
@@ -70,6 +72,9 @@ func TestSSMLastScaleInStoreLoad(t *testing.T) {
 			}
 
 			got, err := store.Load(t.Context())
+			if !aws.ToBool(api.getInput.WithDecryption) {
+				t.Error("WithDecryption = false, want true so SecureString parameters are readable")
+			}
 			if api.putInput != nil {
 				t.Error("Load must not overwrite an existing timestamp or mask a read error")
 			}
@@ -184,8 +189,8 @@ func TestSSMLastScaleInStoreSave(t *testing.T) {
 	if got, want := aws.ToString(in.Value), "2026-09-04T12:00:00Z"; got != want {
 		t.Errorf("Value = %q, want %q", got, want)
 	}
-	if in.Type != types.ParameterTypeString {
-		t.Errorf("Type = %q, want %q", in.Type, types.ParameterTypeString)
+	if in.Type != "" {
+		t.Errorf("Type = %q, want unset so a SecureString parameter stays encrypted", in.Type)
 	}
 	if !aws.ToBool(in.Overwrite) {
 		t.Error("Overwrite = false, want true")
